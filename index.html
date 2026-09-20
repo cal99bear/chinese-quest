@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<meta name="theme-color" content="#7fd7ff">
+<meta name="description" content="龍之華語 Chinese Quest — a fun Traditional Chinese learning game for primary students. Learn characters, pinyin, listening and duelling.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>龍之華語 Chinese Quest — 繁體中文學習遊戲</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.92em' font-size='88'>🐉</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style3d.css">
+</head>
+<body>
+
+<div class="sky" id="sky" aria-hidden="true"></div>
+
+<main class="app">
+
+  <!-- 1. onboarding ------------------------------------------------------ -->
+  <section class="screen" id="screen-onboard"></section>
+
+  <!-- 2. home ------------------------------------------------------------ -->
+  <section class="screen" id="screen-home"></section>
+
+  <!-- 3. learn ----------------------------------------------------------- -->
+  <section class="screen" id="screen-learn"></section>
+
+  <!-- 4. collection ------------------------------------------------------ -->
+  <section class="screen" id="screen-collection"></section>
+
+  <!-- 5. settings -------------------------------------------------------- -->
+  <section class="screen" id="screen-settings"></section>
+
+  <!-- 6. battle lobby ---------------------------------------------------- -->
+  <section class="screen" id="screen-battlesetup"></section>
+
+  <!-- 6b. adventure map --------------------------------------------------- -->
+  <section class="screen" id="screen-levels"></section>
+
+  <!-- 6c. ranking + poster ------------------------------------------------ -->
+  <section class="screen" id="screen-rank"></section>
+
+  <!-- 6d. one strand of the four skills ------------------------------------ -->
+  <section class="screen" id="screen-skill">
+    <div class="screenhead">
+      <button class="screenhead__back" data-nav="home" aria-label="back">←</button>
+      <div style="flex:1">
+        <div class="screenhead__title" id="skillTitle">四技練習</div>
+        <div class="screenhead__sub">Montessori four-skill practice · 聽 說 讀 寫</div>
+      </div>
+    </div>
+    <div id="skillHost"></div>
+  </section>
+
+  <!-- 6e. the daily four-skill check --------------------------------------- -->
+  <section class="screen" id="screen-exam">
+    <div class="screenhead">
+      <button class="screenhead__back" data-nav="home" aria-label="back">←</button>
+      <div style="flex:1">
+        <div class="screenhead__title">🎯 今日四項檢查 Daily Check</div>
+        <div class="screenhead__sub">聽 · 說 · 讀 · 寫 · 一天一次</div>
+      </div>
+    </div>
+    <div id="examHost"></div>
+  </section>
+
+  <!-- 6f. story reader ----------------------------------------------------- -->
+  <section class="screen" id="screen-story">
+    <div class="screenhead">
+      <button class="screenhead__back" data-nav="learn" aria-label="back">←</button>
+      <div style="flex:1">
+        <div class="screenhead__title">📖 讀故事 Story</div>
+        <div class="screenhead__sub">用學過的字讀故事 · read with the characters you know</div>
+      </div>
+    </div>
+    <div id="storyHost"></div>
+  </section>
+
+  <!-- 7. solo game host -------------------------------------------------- -->
+  <section class="screen" id="screen-game">
+    <div class="screenhead">
+      <button class="screenhead__back" data-nav="home" aria-label="back">←</button>
+      <div style="flex:1">
+        <div class="screenhead__title" id="gameTitle">遊戲</div>
+        <div class="screenhead__sub" id="gameSub"></div>
+      </div>
+      <button class="btn btn--icon" data-action="howto" aria-label="how to play" title="How to play">🔊</button>
+    </div>
+    <div id="gameHost"></div>
+  </section>
+
+  <!-- 8. battle arena ---------------------------------------------------- -->
+  <section class="screen" id="screen-battle">
+    <div class="screenhead">
+      <button class="screenhead__back" data-nav="home" aria-label="back">←</button>
+      <div style="flex:1">
+        <div class="screenhead__title" id="gameTitle2">⚔️ 龍之對戰</div>
+        <div class="screenhead__sub">先答對的人攻擊對手 · first correct answer attacks</div>
+      </div>
+    </div>
+    <div id="battleHost"></div>
+  </section>
+
+</main>
+
+<nav class="bottomnav hidden" id="bottomnav" aria-label="main navigation">
+  <button class="navbtn" data-nav="home"><span class="navbtn__em">🏠</span>主頁</button>
+  <button class="navbtn" data-nav="levels"><span class="navbtn__em">🗺️</span>關卡</button>
+  <button class="navbtn" data-nav="learn"><span class="navbtn__em">📖</span>讀本</button>
+  <button class="navbtn" data-nav="rank"><span class="navbtn__em">🏆</span>排行</button>
+  <button class="navbtn" data-nav="collection"><span class="navbtn__em">🎒</span>收藏</button>
+</nav>
+
+<noscript>
+  <p style="text-align:center;font-weight:800;padding:24px">
+    請開啟 JavaScript 才能玩這個遊戲。Please enable JavaScript to play.
+  </p>
+</noscript>
+
+<script src="js/data.js"></script>
+<script src="js/stories.js"></script>
+<script src="js/engine3d.js"></script>
+<script src="js/core.js"></script>
+<script src="js/games.js"></script>
+<script src="js/battle.js"></script>
+<script src="js/skills.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
