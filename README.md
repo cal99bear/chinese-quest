@@ -70,18 +70,21 @@ Design decisions taken straight from the method:
 ### 8 short stories — every one under 100 characters
 
 The **📖 讀本 Reader** tab has a bookshelf of eight controlled-vocabulary
-stories (32–46 characters each):
+stories of about 100 characters each:
 
 | Story | English | Level | Characters |
 |---|---|---|---|
-| 小貓 | The Kitten | 🌱 easy | 36 |
-| 我的家人 | My Family | 🌱 easy | 43 |
-| 小狗 | The Puppy | 🌱 easy | 32 |
-| 好天氣 | A Beautiful Day | 🌿 medium | 46 |
-| 早餐 | Breakfast | 🌿 medium | 42 |
-| 在學校 | At School | 🌿 medium | 46 |
-| 下雨天 | A Rainy Day | 🌳 challenge | 43 |
-| 我的生日 | My Birthday | 🌳 challenge | 46 |
+| 小貓 | The Kitten | 🌱 easy | 98 |
+| 我的家人 | My Family | 🌱 easy | 98 |
+| 小狗 | The Puppy | 🌱 easy | 92 |
+| 好天氣 | A Beautiful Day | 🌿 medium | 93 |
+| 早餐 | Breakfast | 🌿 medium | 93 |
+| 在學校 | At School | 🌿 medium | 96 |
+| 下雨天 | A Rainy Day | 🌳 challenge | 93 |
+| 我的生日 | My Birthday | 🌳 challenge | 91 |
+
+Every story is **about 100 characters** — a full little reader, under the
+100-character ceiling.
 
 In the reader the child can:
 
@@ -98,20 +101,34 @@ carries a reading, every question has a fair single answer.
 
 ---
 
-## 3. The daily four-skill check 🎯
+## 3. The daily story lesson 📖
 
-A short, friendly check of all four strands — **the daily game**:
+**The daily game.** One story is chosen for the day (the same one for the whole
+class, rotating every day), and the child walks through five stages. A tracker at
+the top shows where they are:
 
-* **12 items: 3 × 聽, 3 × 說, 3 × 讀, 3 × 寫** (two characters traced plus one word
-  built with the moveable alphabet). No timer, no pressure.
-* Ends with a **report card** showing a bar and a score for each strand, a total,
-  a grade out of three stars — and it is **kept for the day**, so you can look at
-  it again by tapping the card.
-* Speaking and writing are **self- or grown-up assessed** (a spoken answer can be
-  scored by speech recognition where the browser supports it, or by the child or
-  a parent listening back) — the app says so on the card.
-* One scored check a day, unlimited practice. Full marks in all four strands
-  earns the 🌟 badge.
+| | Stage | What happens |
+|---|---|---|
+| 1 | 📖 **聽故事 Story** | The story is **read aloud with every character highlighted in turn** — a read-along that follows the voice. Tap any character to hear it, switch pinyin on or off, or take a 🐢 slow pass. |
+| 2 | 👂 **聽力 Listening** | Hear a sentence from the story and pick the one you heard; then two words from the story. |
+| 3 | 🗣️ **口說 Speaking** | Say two words and a whole sentence from the story out loud. Recorded and compared, or checked with a grown-up. |
+| 4 | 📖 **閱讀 Reading** | Read a comprehension question about the story, then read two words from it. |
+| 5 | ✍️ **寫字 Writing** | Trace a character from the story, **build a word** from it, and **fill the blank** in a sentence — the missing character is given only as a sound, so there is exactly one answer. |
+
+* **12 tasks: 3 per skill**, no timer, no pressure — about ten minutes.
+* The **report card** shows the story plus a bar and score for each of the four
+  skills, a total and a grade out of three stars. It is **kept for the day**, so
+  tapping the card again reopens it.
+* Speaking and writing are **self- or grown-up assessed** (speech recognition
+  upgrades the speaking stage to real scoring where the browser supports it).
+* One lesson a day, unlimited free practice. Full marks in all four skills earns
+  the 🌟 badge.
+
+> **How the read-along stays in sync.** Speech engines rarely report Chinese word
+> boundaries, so the highlight runs on a per-character timeline calibrated to the
+> speaking rate, and **snaps to the engine's real boundary events** whenever they
+> do arrive. With no Chinese voice installed it still highlights, at a reading
+> pace, so the child can follow along silently.
 
 ---
 
@@ -282,8 +299,8 @@ chinese-quest/
     ├── validate-data.js    vocabulary integrity
     ├── validate-stories.js story library: readings, length, questions   (8 stories)
     ├── test-3d.js          3D maths, depth sorting, shading, degradation (39 checks)
-    ├── test-logic.js       engine: SRS, levels, quota, check, badges    (137 checks)
-    ├── test-dom.js         end-to-end: plays everything in a real DOM   (197 checks)
+    ├── test-logic.js       engine: SRS, levels, quota, lesson, badges   (158 checks)
+    ├── test-dom.js         end-to-end: plays everything in a real DOM   (207 checks)
     ├── check-css.js        class coverage + inline-element layout traps
     └── visual-check.js     optional headless-Chrome screenshots
 ```
@@ -292,16 +309,17 @@ chinese-quest/
 node tools/validate-data.js      # ✅ 0 errors, 0 warnings
 node tools/validate-stories.js   # ✅ 0 errors (8 stories, longest 46 characters)
 node tools/test-3d.js            # ✅ 39 passed, 0 failed
-node tools/test-logic.js         # ✅ 137 passed, 0 failed
-node tools/test-dom.js           # ✅ 197 passed, 0 failed
+node tools/test-logic.js         # ✅ 158 passed, 0 failed
+node tools/test-dom.js           # ✅ 207 passed, 0 failed
 node tools/check-css.js          # ✅ 0 unstyled classes, 0 layout traps
 ```
 
 `test-dom.js` boots `index.html` in a real DOM (using the jsdom bundled with the
 DSH desktop app) and plays all eight game modes, both battle modes, a level and
 its unlock, the **daily level limit**, all **four skill strands**, the **daily
-check** and its report card, the **story reader** with its comprehension
-questions, the ranking poster, the shop, the settings and a reset — verifying
+story lesson** — including that the read-along really highlights each character in
+turn and moves on to the next — the **story reader** with its comprehension
+questions, the ranking poster, the shop, the settings and a reset. It verifies
 that a wrong battle answer freezes you, that passing a level unlocks the next,
 that the fourth level of the day is refused, and that progress survives a reload.
 It loads the scripts **from `index.html` itself**, so the test and the page can

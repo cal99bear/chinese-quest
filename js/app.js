@@ -193,6 +193,7 @@ var App = (function () {
   function skillSectionHTML() {
     var ex = S.examToday();
     var done = !!ex;
+    var today = Skills.todayStory();
     var strands = CQ.strands.map(function (st) {
       return '<button class="skillcard" data-skill="' + st.id + '" style="--sc:' + st.color + '">' +
         '<span class="skillcard__em">' + st.emoji + '</span>' +
@@ -211,12 +212,12 @@ var App = (function () {
       '<div class="section__head"><span class="section__title">🧭 四技練習 Four Skills</span>' +
         '<span class="section__sub">聽 · 說 · 讀 · 寫</span></div>' +
       '<button class="examcard' + (done ? ' examcard--done' : '') + '" data-action="exam">' +
-        '<span class="examcard__em">' + (done ? '✅' : '🎯') + '</span>' +
+        '<span class="examcard__em">' + (done ? '✅' : today.emoji) + '</span>' +
         '<span class="examcard__body">' +
-          '<b>' + (done ? '今天的檢查完成了 · Done for today' : '今天的四項檢查 Daily Check') + '</b>' +
+          '<b>' + (done ? '今天的故事課完成了 · Done for today' : '今日故事：' + U.esc(today.title)) + '</b>' +
           '<small>' + (done
             ? '聽 ' + part('listen') + ' · 說 ' + part('speak') + ' · 讀 ' + part('read') + ' · 寫 ' + part('write')
-            : '聽力 · 口說 · 閱讀 · 書寫 — 共 ' + (CQ.config.examPerStrand * 4) + ' 題，沒有計時') + '</small>' +
+            : U.esc(today.titleEn) + ' · ' + today.chars + ' 個字 — 聽故事 → 聽力 → 口說 → 閱讀 → 寫字') + '</small>' +
         '</span>' +
         '<span class="examcard__go">' + (done ? '報告 ▶' : '開始 ▶') + '</span>' +
       '</button>' +
@@ -650,17 +651,28 @@ var App = (function () {
     '</div>';
   }
 
-  function showExamReport() {
+  function storyRow(ex) {
+    var s = (ex && ex.story) ? CQ.storyById[ex.story] : null;
+    return '<div class="reportrow reportrow--story">' +
+      '<span class="reportrow__em">' + (s ? s.emoji : '📖') + '</span>' +
+      '<span class="reportrow__zh zh">故事</span>' +
+      '<span class="reportrow__bar"><i style="width:100%;background:#7048e8"></i></span>' +
+      '<span class="reportrow__n">✅</span>' +
+    '</div>' + (s ? '<p class="center muted" style="font-size:12px;font-weight:800;margin:-2px 0 6px">' +
+      U.esc(s.title) + ' · ' + U.esc(s.titleEn) + ' · ' + s.chars + ' 個字</p>' : '');
+  }
+
+  function showLessonReport() {
     var ex = S.examToday();
     if (!ex) return;
     modal(
-      '<div class="modal__title">🎯 今日四項檢查報告</div>' +
+      '<div class="modal__title">📖 今日故事課報告</div>' +
       '<p class="center muted" style="font-weight:800">' + U.esc(S.me().name) + ' · ' + ex.day + '</p>' +
-      '<div class="reportcard">' + CQ.strands.map(reportRow).join('') + '</div>' +
+      '<div class="reportcard">' + storyRow(ex) + CQ.strands.map(reportRow).join('') + '</div>' +
       '<div class="modal__body">' +
-        '<div class="resultrow"><span>⭐ 總分 Score</span><b>' + ex.total + ' / ' + ex.items + '</b></div>' +
+        '<div class="resultrow"><span>⭐ 四技總分 Score</span><b>' + ex.total + ' / ' + ex.items + '</b></div>' +
         '<div class="resultrow"><span>🏅 評等 Grade</span><b>' + CQ.ui.stars(ex.stars) + '</b></div>' +
-        '<div class="resultrow"><span>📅 明天可以再測</span><b>一天一次</b></div>' +
+        '<div class="resultrow"><span>📅 明天有新的故事</span><b>一天一次</b></div>' +
       '</div>' +
       (ex.perfect ? '<p class="center" style="font-weight:900;color:#b8860b">🌟 四項全部答對！</p>' : '') +
       '<p class="center muted" style="font-size:12px;font-weight:800;margin-top:10px">' +
@@ -671,19 +683,21 @@ var App = (function () {
       '</div>', { dismissible: true });
   }
 
-  function finishExam(res) {
+  function finishLesson(res) {
     var byStrand = res.byStrand || {};
     var perfect = CQ.strands.every(function (st) {
       var b = byStrand[st.id] || { ok: 0, n: 0 };
       return b.n > 0 && b.ok === b.n;
     });
-    var stars = U.stars(res.correct, res.items);
+    var correct = Number(res.total != null ? res.total : res.correct) || 0;
+    var items = Number(res.items) || 0;
+    var stars = U.stars(correct, items);
     S.saveExam({
-      byStrand: byStrand, total: res.correct, items: res.items,
-      perfect: perfect, stars: stars, seconds: res.seconds
+      byStrand: byStrand, total: correct, items: items,
+      perfect: perfect, stars: stars, seconds: res.seconds, story: res.story
     });
-    var xp = res.correct * 10 + 30 + (perfect ? 50 : 0);
-    var coins = res.correct * 2 + 20;
+    var xp = correct * 10 + 30 + (perfect ? 50 : 0);
+    var coins = correct * 2 + 20;
     S.addXp(xp);
     S.addCoins(coins);
     S.me().stats.games++;
@@ -695,11 +709,11 @@ var App = (function () {
       '<div class="resultstars">' + [0, 1, 2].map(function (i) {
         return '<span>' + (i < stars ? '⭐' : '☆') + '</span>';
       }).join('') + '</div>' +
-      '<div class="modal__title">' + (perfect ? '四項滿分！' : '今天的檢查完成了') + '</div>' +
+      '<div class="modal__title">' + (perfect ? '四技滿分！' : '今天的故事課完成了') + '</div>' +
       '<p class="center muted" style="font-weight:800">' + U.esc(S.me().name) + ' · ' + U.dayKey() + '</p>' +
-      '<div class="reportcard">' + CQ.strands.map(reportRow).join('') + '</div>' +
+      '<div class="reportcard">' + storyRow(res) + CQ.strands.map(reportRow).join('') + '</div>' +
       '<div class="modal__body">' +
-        '<div class="resultrow"><span>⭐ 總分 Score</span><b>' + res.correct + ' / ' + res.items + '</b></div>' +
+        '<div class="resultrow"><span>⭐ 總分 Score</span><b>' + correct + ' / ' + items + '</b></div>' +
         '<div class="resultrow"><span>⭐ XP</span><b>+' + xp + '</b></div>' +
         '<div class="resultrow"><span>🪙 金幣</span><b>+' + coins + '</b></div>' +
         '<div class="resultrow"><span>🌙 下次檢查</span><b>明天 Tomorrow</b></div>' +
@@ -1513,11 +1527,11 @@ var App = (function () {
     switch (action) {
       case 'quickplay': A.tap(); startCustomRound(S.pickWords(12, currentTheme)); break;
       case 'exam':
-        if (S.examToday()) { showExamReport(); break; }
+        if (S.examToday()) { showLessonReport(); break; }
         A.tap();
         el.activeLevel = null;
         show('exam');
-        Skills.exam();
+        Skills.lesson();
         break;
       case 'testvoice':
         if (SP.hasChinese()) { SP.say('你好，我是你的中文小老師'); FX.toast('🔊 播放中…'); }
@@ -1584,7 +1598,7 @@ var App = (function () {
       launchLevel(nx);
     } else if (r === 'levels') { Games.stop(); Battle.stop(); show('levels'); }
     else if (r === 'skill-again') { show('skill'); Skills.practice(el.lastStrand || 'listen', currentTheme); }
-    else if (r === 'exam-again') { show('exam'); Skills.exam(); }
+    else if (r === 'exam-again') { show('exam'); Skills.lesson(); }
     else if (r === 'next') { Games.stop(); show('home'); }
     else if (r === 'home') { Games.stop(); Battle.stop(); el.activeLevel = null; show('home'); }
     else if (r === 'rematch') { Battle.stop(); show('battlesetup'); }
@@ -1663,8 +1677,8 @@ var App = (function () {
     renderRank: renderRank,
     showCard: modal,
     finishSkills: finishSkills,
-    finishExam: finishExam,
-    showExamReport: showExamReport,
+    finishLesson: finishLesson,
+    showLessonReport: showLessonReport,
     launchLevel: launchLevel,
     drawPoster: drawPoster,
     closeModal: closeModal,

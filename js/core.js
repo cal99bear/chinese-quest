@@ -124,6 +124,12 @@ var CQ = (function () {
     try { localStorage.setItem(CFG.storageKey, JSON.stringify(obj)); } catch (e) { /* private mode */ }
   }
 
+  /* Any reward that is not a finite number counts as zero. */
+  function finite(n) {
+    n = Math.round(Number(n));
+    return isFinite(n) ? n : 0;
+  }
+
   /* A day's counters. Kept in one place so a rollover never drops a field. */
   function newDaily() {
     return { day: util.dayKey(), xp: 0, games: 0, done: false, cleared: [] };
@@ -179,6 +185,10 @@ var CQ = (function () {
         if (!prof.skills) prof.skills = { listen: 0, speak: 0, read: 0, write: 0 };
         if (prof.exam === undefined) prof.exam = null;
         if (prof.settings.levelLimit === undefined) prof.settings.levelLimit = CFG.dailyLevelLimit;
+        if (!isFinite(prof.xp)) prof.xp = 0;          // repair an older corrupted save
+        if (!isFinite(prof.coins)) prof.coins = 0;
+        if (prof.stats && !isFinite(prof.stats.correct)) prof.stats.correct = 0;
+        if (prof.stats && !isFinite(prof.stats.wrong)) prof.stats.wrong = 0;
         if (!prof.streak) prof.streak = { count: 0, best: 0, last: null };
         if (!prof.settings) prof.settings = { pinyin: true, zhuyin: false, sound: true, speech: true, difficulty: 'easy' };
         if (!prof.owned) prof.owned = [];
@@ -285,6 +295,8 @@ var CQ = (function () {
     },
 
     _addXp: function (p, n) {
+      n = Math.round(Number(n));
+      if (!isFinite(n)) n = 0;          // never let a bad reward poison xp
       var today = util.dayKey();
       if (p.daily.day !== today) p.daily = newDaily();
       var wk = util.weekKey();
@@ -309,10 +321,15 @@ var CQ = (function () {
       return p ? Store._addXp(p, n) : { stageUp: false, stage: 0, dailyDone: false, xp: n };
     },
 
-    addCoins: function (n) { var p = Store.me(); p.coins += n; Store.save(); return p.coins; },
+    addCoins: function (n) {
+      var p = Store.me();
+      p.coins += finite(n);
+      Store.save();
+      return p.coins;
+    },
     addCoinsFor: function (pid, n) {
       var p = Store.data.profiles[pid];
-      if (p) { p.coins += n; Store.save(); }
+      if (p) { p.coins += finite(n); Store.save(); }
     },
 
     spend: function (n) {
@@ -521,6 +538,8 @@ var CQ = (function () {
     /* keeps the best attempt of the day */
     saveExam: function (result) {
       var p = Store.me();
+      result.total = finite(result.total);          // a report card is never NaN
+      result.items = finite(result.items);
       var today = util.dayKey();
       var prev = (p.exam && p.exam.day === today) ? p.exam : null;
       var better = !prev || result.total > prev.total ||
@@ -731,8 +750,12 @@ var CQ = (function () {
         u.rate = opts.rate == null ? (opts.lang === 'en' ? 0.95 : 0.78) : opts.rate;
         u.pitch = opts.pitch == null ? 1.08 : opts.pitch;
         u.volume = 1;
+        if (opts.onStart) u.onstart = opts.onStart;
+        if (opts.onEnd) u.onend = opts.onEnd;
+        if (opts.onBoundary) u.onboundary = opts.onBoundary;
+        if (opts.onError) u.onerror = opts.onError;
         window.speechSynthesis.speak(u);
-        return true;
+        return u;
       } catch (e) { return false; }
     },
 

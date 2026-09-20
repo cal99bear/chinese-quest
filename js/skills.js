@@ -18,6 +18,7 @@ var Skills = (function () {
   var U = CQ.util, S = CQ.store, A = CQ.audio, SP = CQ.speech, FX = CQ.fx;
   var host = null;            // the container currently in use
   var live = null;
+  var current = null;         // the active read-along player, if any
 
   /* ================================================================ pure == */
   /* Tracing score: how much of the character did the child cover, and how
@@ -125,12 +126,13 @@ var Skills = (function () {
   }
 
   /* ---- 說: say it out loud ---------------------------------------------- */
-  function speakItem(word) {
+  function speakItem(word, opts) {
+    var selfOnly = !!(opts && opts.selfOnly);
     return {
       strand: 'speak', word: word,
       mount: function (box, api) {
         var answered = false;
-        var mode = SR ? 'recognise' : (canRecord() ? 'record' : 'self');
+        var mode = (SR && !selfOnly) ? 'recognise' : (canRecord() ? 'record' : 'self');
         box.innerHTML =
           '<div class="prompt pop">' +
             '<div class="prompt__zh">' + U.esc(word.zh) + '</div>' +
@@ -653,39 +655,373 @@ var Skills = (function () {
     return U.pick(pool.length ? pool : CQ.stories);
   }
 
-  function exam() {
-    var words = S.pickWords(14, 'all');
-    var per = CQ.config.examPerStrand || 3;
-    var items = [];
-    var i;
-    for (i = 0; i < per; i++) items.push(listenItem(words[i], CQ.words));
-    for (i = 0; i < per; i++) items.push(speakItem(words[per + i]));
-    for (i = 0; i < per - 1; i++) {
-      items.push(readWordItem(words[per * 2 + i], CQ.words));
+  /* =================================================== read-along player == */
+  /* Reads the story aloud and highlights each character as it is spoken.
+     Speech engines rarely report Chinese word boundaries, so the highlight
+     runs on a per-character timeline calibrated to the speaking rate, and
+     snaps to real boundary events whenever the engine does provide them. */
+  function charMs(ch, rate) {
+    var base = 250 * (0.7 / (rate || 0.7));
+    if (ch === '，' || ch === '、') return base * 1.5;
+    if (ch === '。' || ch === '！' || ch === '？') return base * 2.2;
+    return base;
+  }
+
+  function storyPlayer(opts) {
+    var lines = opts.lines || [];
+    var rate = opts.rate || 0.7;
+    var timers = [], stopped = false, line = -1;
+
+    function clear() { timers.forEach(clearTimeout); timers = []; }
+    function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+    function emit(i, j) { if (!stopped && opts.onChar) opts.onChar(i, j); }
+
+    function playLine(i) {
+      if (stopped) return;
+      if (i >= lines.length) { if (opts.onDone) opts.onDone(); return; }
+      line = i;
+      var chars = lines[i][0].split('');
+      if (opts.onLine) opts.onLine(i);
+      var acc = 0, k;
+      for (k = 0; k < chars.length; k++) {
+        (function (idx) { at(acc, function () { emit(i, idx); }); })(k);
+        acc += charMs(chars[k], rate);
+      }
+      at(acc + 300, function () { if (!stopped) { emit(i, -1); playLine(i + 1); } });
+      emit(i, 0);
+      SP.say(lines[i][0], {
+        rate: rate,
+        onBoundary: function (e) {
+          if (stopped || !e || typeof e.charIndex !== 'number') return;
+          var j = e.charIndex;
+          if (j <= 0 || j >= chars.length) return;
+          clear();                                   // resync to the real voice
+          var t = 0;
+          for (var m = j; m < chars.length; m++) {
+            (function (idx) { at(t, function () { emit(i, idx); }); })(m);
+            t += charMs(chars[m], rate);
+          }
+          at(t + 300, function () { if (!stopped) { emit(i, -1); playLine(i + 1); } });
+        }
+      });
     }
-    /* the last reading item is a real sentence from a story */
-    items.push(readSentenceItem(pickStory(), 0));
-    /* writing: two single characters to trace and one word to build */
-    var single = words.filter(function (w) { return w.zh.length === 1; });
-    var multi = words.filter(function (w) { return w.zh.length >= 2; });
-    for (i = 0; i < per; i++) {
-      if (i < per - 1 && single[i]) items.push(traceItem(single[i]));
-      else if (multi[0]) items.push(buildItem(multi[0]));
-      else items.push(writeItem(words[per * 3 + i] || words[0]));
-    }
-    run(items, {
-      strand: 'exam', host: '#examHost',
-      onDone: function (res) { App.finishExam(res); }
+
+    return {
+      start: function (from) { stopped = false; playLine(from || 0); },
+      stop: function () { stopped = true; clear(); SP.stop(); },
+      line: function () { return line; }
+    };
+  }
+
+  /* ==================================================== today's story ==== */
+  function dayOfYear(d) {
+    var now = d || new Date();
+    var start = new Date(now.getFullYear(), 0, 0);
+    return Math.floor((now - start) / 86400000);
+  }
+
+  /* Everyone reads the same story on the same day, and it rotates daily. */
+  function todayStory() {
+    var list = CQ.stories;
+    return list[dayOfYear() % list.length];
+  }
+
+  function wordsIn(story) {
+    return CQ.words.filter(function (w) { return story.text.indexOf(w.zh) >= 0; })
+      .sort(function (a, b) { return b.zh.length - a.zh.length; });
+  }
+
+  /* ---- hear a sentence, pick the one you heard -------------------------- */
+  function sentenceListenItem(story) {
+    var usable = story.lines.filter(function (l) {
+      return l[0].replace(/[。，、！？；：]/g, '').length >= 6;
     });
+    if (usable.length < 3) usable = story.lines.slice();
+    var answer = U.pick(usable);
+    var others = U.shuffle(usable.filter(function (l) { return l !== answer; })).slice(0, 2);
+    var opts = U.shuffle(others.concat([answer]));
+    return {
+      strand: 'listen', word: { zh: answer[0], py: '', en: answer[1], em: '👂' },
+      mount: function (box, api) {
+        box.innerHTML =
+          '<div class="prompt pop"><button class="prompt__speak" data-act="hear">🔊</button>' +
+            '<div class="prompt__emoji">👂</div>' +
+            '<div class="prompt__text">Listen to the sentence</div>' +
+            '<div class="prompt__sub">聽一句故事，選出你聽到的那一句 · which sentence did you hear?</div></div>' +
+          '<div class="options options--' + opts.length + '">' + opts.map(function (l, i) {
+            return '<button class="option" data-opt="' + i + '"><span class="zh" style="font-size:20px">' +
+              U.esc(l[0]) + '</span></button>';
+          }).join('') + '</div><div class="sBody"></div>';
+        var answered = false;
+        function play() { SP.say(answer[0], { rate: 0.66 }); }
+        setTimeout(play, 240);
+        box.addEventListener('click', function (e) {
+          if (e.target.closest('[data-act="hear"]')) { A.tap(); play(); return; }
+          var b = e.target.closest('[data-opt]');
+          if (!b || answered) return;
+          answered = true;
+          var chosen = opts[+b.dataset.opt];
+          var ok = chosen === answer;
+          U.$$('.option', box).forEach(function (btn) {
+            var cand = opts[+btn.dataset.opt];
+            if (cand === answer) btn.classList.add('option--correct');
+            else if (cand === chosen) btn.classList.add('option--wrong');
+            else btn.classList.add('option--dim');
+            btn.disabled = true;
+          });
+          var body = box.querySelector('.sBody');
+          if (body) body.innerHTML = '<div class="hintstrip"><span class="pill">💡 ' + U.esc(answer[1]) + '</span></div>';
+          if (ok) { A.correct(); FX.confetti({ count: 12, y: window.innerHeight * 0.3, spread: 50 }); } else A.wrong();
+          setTimeout(function () { api.done(ok); }, ok ? 1100 : 1900);
+        });
+      }
+    };
+  }
+
+  /* ---- the moveable alphabet inside a sentence: fill the blank ---------- */
+  function clozeItem(story) {
+    var usable = story.lines.filter(function (l) {
+      return l[0].replace(/[。，、！？；：]/g, '').length >= 6;
+    });
+    var line = U.pick(usable.length ? usable : story.lines);
+    var chars = line[0].split('');
+    var at = chars.length - 2;
+    while (at > 0 && /[。，、！？；：]/.test(chars[at])) at--;
+    var answer = chars[at];
+    var info = CQ.charPy[answer] || ['', ''];
+    var pool = Object.keys(CQ.charPy).filter(function (c) { return c !== answer; });
+    var opts = U.shuffle([answer].concat(U.sample(pool, 3)));
+    return {
+      strand: 'write', word: { zh: answer, py: info[0], en: info[1], em: '🧩' },
+      mount: function (box, api) {
+        box.innerHTML =
+          '<div class="prompt pop"><div class="prompt__text">🧩 填上缺少的字</div>' +
+            '<div class="cloze">' + chars.map(function (c, i) {
+              return i === at ? '<span class="cloze__blank">?</span>' : '<span class="zh">' + U.esc(c) + '</span>';
+            }).join('') + '</div>' +
+            '<div class="prompt__sub">聽一聽，選出空格裡的字 · the missing character reads ' +
+              '<b style="color:#3b82f6">' + U.esc(info[0]) + '</b></div></div>' +
+          '<div class="options options--' + opts.length + '">' + opts.map(function (c, i) {
+            return '<button class="option" data-opt="' + i + '"><span class="zh">' + U.esc(c) + '</span></button>';
+          }).join('') + '</div><div class="sBody"></div>';
+        SP.say(line[0], { rate: 0.6 });
+        var answered = false;
+        box.addEventListener('click', function (e) {
+          var b = e.target.closest('[data-opt]');
+          if (!b || answered) return;
+          answered = true;
+          var chosen = opts[+b.dataset.opt];
+          var good = chosen === answer;
+          U.$$('.option', box).forEach(function (btn) {
+            var cand = opts[+btn.dataset.opt];
+            if (cand === answer) btn.classList.add('option--correct');
+            else if (cand === chosen) btn.classList.add('option--wrong');
+            else btn.classList.add('option--dim');
+            btn.disabled = true;
+          });
+          S.record({ zh: answer, py: info[0] }, good);
+          var body = box.querySelector('.sBody');
+          if (body) body.innerHTML = infoStrip({ zh: answer, py: info[0], zy: '', en: info[1] });
+          if (good) { A.correct(); FX.confetti({ count: 12, y: window.innerHeight * 0.3 }); } else A.wrong();
+          SP.say(line[0], { rate: 0.6 });
+          setTimeout(function () { api.done(good); }, good ? 1000 : 1900);
+        });
+      }
+    };
+  }
+
+  /* ====================================================== the daily lesson = */
+  var LESSON_STAGES = [
+    { id: 'story',  zh: '聽故事', en: 'Story',     emoji: '📖' },
+    { id: 'listen', zh: '聽力',   en: 'Listening', emoji: '👂' },
+    { id: 'speak',  zh: '口說',   en: 'Speaking',  emoji: '🗣️' },
+    { id: 'read',   zh: '閱讀',   en: 'Reading',   emoji: '📖' },
+    { id: 'write',  zh: '寫字',   en: 'Writing',   emoji: '✍️' }
+  ];
+
+  /* the three tasks for one stage, all drawn from today's story */
+  function lessonItems(id, story) {
+    var w = wordsIn(story);
+    var singles = w.filter(function (x) { return x.zh.length === 1; });
+    var multis = w.filter(function (x) { return x.zh.length >= 2; });
+    var spare = S.pickWords(8, 'all');
+    function pick(arr, i) {
+      if (!arr.length) return spare[i % spare.length];
+      return arr[i % arr.length];
+    }
+    if (id === 'listen') {
+      return [sentenceListenItem(story), listenItem(pick(w, 1), CQ.words), listenItem(pick(w, 3), CQ.words)];
+    }
+    if (id === 'speak') {
+      return [
+        speakItem(pick(w, 0)),
+        speakItem(pick(w, 2)),
+        speakItem({ zh: story.lines[0][0], py: '', en: story.lines[0][1], em: '🗣️' }, { selfOnly: true })
+      ];
+    }
+    if (id === 'read') {
+      return [readSentenceItem(story, 0), readWordItem(pick(w, 1), CQ.words), readWordItem(pick(w, 4), CQ.words)];
+    }
+    var multi = multis[0] || spare.filter(function (x) { return x.zh.length >= 2; })[0] || spare[0];
+    return [traceItem(pick(singles, 0)), buildItem(multi), clozeItem(story)];
+  }
+
+  function lesson() {
+    var story = todayStory();
+    var hostEl = U.$('#examHost');
+    var tracker = U.$('#lessonTracker');
+    if (!hostEl) return;
+    stop();
+    var results = {}, at = 0;
+
+    function drawTracker() {
+      if (!tracker) return;
+      tracker.innerHTML = LESSON_STAGES.map(function (s, i) {
+        var r = results[s.id];
+        var state = i < at ? ' tracker__step--done' : (i === at ? ' tracker__step--now' : '');
+        var mark = r ? (r.ok === r.n && r.n ? '✅' : r.ok + '/' + r.n) : s.emoji;
+        return (i ? '<span class="tracker__link"></span>' : '') +
+          '<div class="tracker__step' + state + '"><span class="tracker__em">' + mark + '</span>' +
+          '<span class="tracker__zh zh">' + s.zh + '</span></div>';
+      }).join('');
+    }
+
+    function go(i) {
+      at = i;
+      drawTracker();
+      if (i >= LESSON_STAGES.length) return finish();
+      var id = LESSON_STAGES[i].id;
+      if (id === 'story') return stageStory();
+      run(lessonItems(id, story), {
+        host: '#examHost',
+        onDone: function (res) {
+          results[id] = { ok: res.correct, n: res.items };
+          go(at + 1);
+        }
+      });
+    }
+
+    function stageStory() {
+      var showPy = !!S.me().settings.pinyin;
+      var rate = SP.hasChinese() ? 0.68 : 0.45;
+      var lastEl = null;
+
+      function paint() {
+        hostEl.innerHTML =
+          '<div class="hud"><div class="hud__q">' + story.emoji + ' ' + U.esc(story.title) +
+            '<small>' + U.esc(story.titleEn) + ' · ' + story.chars + ' 個字</small></div>' +
+            '<div class="spacer"></div><span class="pill">' +
+              (SP.hasChinese() ? '🔊 跟著讀' : '👀 跟著高亮讀') + '</span></div>' +
+          '<div class="btnrow" style="margin-bottom:10px">' +
+            '<button class="btn btn--primary" data-act="play">▶️ 聽故事</button>' +
+            '<button class="btn btn--ghost" data-act="slow">🐢 慢慢讀</button>' +
+            '<button class="btn' + (showPy ? ' btn--gold' : '') + '" data-act="py">🔤 拼音</button>' +
+          '</div>' +
+          '<div class="story">' + story.lines.map(function (l, i) {
+            return '<p class="story__line" data-line="' + i + '">' + rubyLine(l[0], showPy, i + '-') + '</p>';
+          }).join('') + '</div>' +
+          '<div class="btnrow" style="margin:16px 0 24px">' +
+            '<button class="btn btn--gold btn--big" data-act="next">我準備好了 → 聽力測驗</button>' +
+          '</div>';
+      }
+
+      function highlight(lineIdx, charIdx) {
+        if (lastEl) lastEl.classList.remove('is-speaking');
+        U.$$('.story__line', hostEl).forEach(function (p) { p.classList.remove('is-reading'); });
+        var lineEl = U.$('.story__line[data-line="' + lineIdx + '"]', hostEl);
+        if (!lineEl) return;
+        lineEl.classList.add('is-reading');
+        if (charIdx < 0) return;
+        var el = U.$('[data-ci="' + lineIdx + '-' + charIdx + '"]', hostEl);
+        if (!el) return;
+        el.classList.add('is-speaking');
+        lastEl = el;
+        if (charIdx === 0 && el.scrollIntoView) {
+          try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+        }
+      }
+
+      function startPlay(slow) {
+        if (current) current.stop();
+        paint();
+        current = storyPlayer({
+          lines: story.lines,
+          rate: slow ? 0.5 : rate,
+          onChar: highlight,
+          onDone: function () {
+            if (lastEl) lastEl.classList.remove('is-speaking');
+            U.$$('.story__line', hostEl).forEach(function (p) { p.classList.remove('is-reading'); });
+          }
+        });
+        current.start(0);
+      }
+
+      paint();
+      hostEl.addEventListener('click', function (e) {
+        var t = e.target.closest('[data-act]');
+        if (t) {
+          var act = t.dataset.act;
+          if (act === 'play') { A.tap(); startPlay(false); return; }
+          if (act === 'slow') { A.tap(); startPlay(true); return; }
+          if (act === 'py') { A.tap(); showPy = !showPy; if (current) current.stop(); paint(); return; }
+          if (act === 'next') {
+            A.tap();
+            if (current) current.stop();
+            results.story = { ok: 1, n: 1 };
+            go(1);
+            return;
+          }
+        }
+        var ch = e.target.closest('.storychar');
+        if (ch) {
+          var c = ch.dataset.c;
+          var info = CQ.charPy[c];
+          A.tap();
+          SP.say(c, { rate: 0.6 });
+          if (info) FX.toast('<span class="zh" style="font-size:20px">' + U.esc(c) + '</span> ' +
+            U.esc(info[0]) + ' · ' + U.esc(info[1]), 1600);
+          return;
+        }
+        var line = e.target.closest('.story__line');
+        if (line && e.target === line) {
+          A.tap();
+          SP.say(story.lines[+line.dataset.line][0], { rate: 0.7 });
+        }
+      });
+    }
+
+    function finish() {
+      if (current) current.stop();
+      var out = {};
+      var ok = 0, n = 0;
+      ['listen', 'speak', 'read', 'write'].forEach(function (k) {
+        out[k] = results[k] || { ok: 0, n: 0 };
+        ok += out[k].ok;
+        n += out[k].n;
+      });
+      App.finishLesson({
+        story: story.id, storyTitle: story.title,
+        byStrand: {
+          listen: out.listen, speak: out.speak, read: out.read, write: out.write
+        },
+        total: ok, items: n
+      });
+    }
+
+    go(0);
   }
 
   /* ====================================================== story reader ==== */
-  function rubyLine(zh, showPy) {
-    return zh.split('').map(function (c) {
+  function rubyLine(zh, showPy, keyPrefix) {
+    return zh.split('').map(function (c, i) {
       var info = CQ.charPy[c];
-      if (/[。，、！？；：]/.test(c)) return '<span class="storypunct">' + c + '</span>';
-      if (showPy && info) return '<ruby class="storychar" data-c="' + U.esc(c) + '">' + U.esc(c) + '<rt>' + U.esc(info[0]) + '</rt></ruby>';
-      return '<button class="storychar" data-c="' + U.esc(c) + '">' + U.esc(c) + '</button>';
+      var key = keyPrefix ? ' data-ci="' + keyPrefix + i + '"' : '';
+      if (/[。，、！？；：]/.test(c)) return '<span class="storypunct"' + key + '>' + c + '</span>';
+      if (showPy && info) {
+        return '<ruby class="storychar" data-c="' + U.esc(c) + '"' + key + '>' +
+          U.esc(c) + '<rt>' + U.esc(info[0]) + '</rt></ruby>';
+      }
+      return '<button class="storychar" data-c="' + U.esc(c) + '"' + key + '>' + U.esc(c) + '</button>';
     }).join('');
   }
 
@@ -846,11 +1182,16 @@ var Skills = (function () {
     }).join('') + '</div>';
   }
 
-  function stop() { SP.stop(); live = null; }
+  function stop() {
+    SP.stop();
+    if (current) { current.stop(); current = null; }
+    live = null;
+  }
 
   return {
     practice: practice,
-    exam: exam,
+    lesson: lesson,
+    todayStory: todayStory,
     openStory: openStory,
     storyShelfHTML: storyShelfHTML,
     stop: stop,
@@ -861,6 +1202,11 @@ var Skills = (function () {
     speakItem: speakItem,
     readWordItem: readWordItem,
     writeItem: writeItem,
-    buildItem: buildItem
+    buildItem: buildItem,
+    sentenceListenItem: sentenceListenItem,
+    clozeItem: clozeItem,
+    storyPlayer: storyPlayer,
+    lessonItems: lessonItems,
+    charMs: charMs
   };
 })();

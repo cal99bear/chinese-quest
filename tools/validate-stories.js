@@ -59,8 +59,11 @@ S.STORIES.forEach((st) => {
   if (st.lines.length < 5) warn(id + ': only ' + st.lines.length + ' sentences');
   st.lines.forEach((l, i) => {
     if (!l[0] || !l[1]) err(id + ' line ' + i + ': needs Chinese and English');
-    if (!/[。！？]$/.test(l[0])) warn(id + ' line ' + i + ': no sentence-ending punctuation');
-    if (!PUNCT.test(l[0].slice(-1))) err(id + ' line ' + i + ': does not end with punctuation');
+    const last = l[0].slice(-1);
+    if (!PUNCT.test(last)) err(id + ' line ' + i + ': does not end with punctuation');
+    else if (last === '，' && i === st.lines.length - 1) {
+      err(id + ' line ' + i + ': a story cannot end on a comma');
+    }
   });
   if (!st.questions.length) err(id + ': no comprehension questions');
   st.questions.forEach((q, i) => {

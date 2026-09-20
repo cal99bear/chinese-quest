@@ -292,6 +292,8 @@ ok(S.me().perfectExam === true, 'the perfect check is remembered');
 group('stories + skill counters');
 ok(CQ.stories.length === 8, 'eight stories are loaded', String(CQ.stories.length));
 ok(CQ.stories.every(function (s) { return s.chars < 100; }), 'every story is under 100 characters');
+ok(CQ.stories.every(function (s) { return s.chars >= 85; }), 'every story is a full ~100-character reader',
+  CQ.stories.map(function (s) { return s.chars; }).join(','));
 ok(CQ.stories.every(function (s) { return s.lines.length >= 5 && s.questions.length >= 2; }),
   'every story has sentences and questions');
 ok(CQ.stories.every(function (s) { return s.emoji && s.titleEn && s.level >= 1; }), 'every story is complete');
@@ -314,6 +316,25 @@ for (var w = 0; w < 10; w++) S.addSkill('write');
 S.me().stats.games = 1;
 var earned = S.evaluateBadges().map(function (b) { return b.id; });
 ok(earned.indexOf('writer10') >= 0, 'the writing badge unlocks at ten traced characters');
+
+group('the daily story lesson');
+var TS = Sk.todayStory();
+ok(!!TS && !!TS.id, 'a story is chosen for today', TS && TS.id);
+ok(Sk.todayStory() === TS, 'the choice is stable through the day');
+ok(CQ.stories.some(function (s) { return s.id === TS.id; }), 'the daily story comes from the library');
+['listen', 'speak', 'read', 'write'].forEach(function (st) {
+  var items = Sk.lessonItems(st, TS);
+  ok(items.length === 3, 'the ' + st + ' stage sets three tasks', String(items.length));
+  ok(items.every(function (it) { return it.strand === st; }), 'the ' + st + ' tasks belong to that strand');
+  ok(items.every(function (it) { return it && typeof it.mount === 'function' && it.word; }),
+    'the ' + st + ' tasks can each be mounted');
+});
+ok(Sk.lessonItems('write', TS).some(function (it) { return it.word.em === '🧩'; }),
+  'the writing stage includes the fill-the-blank task');
+ok(Sk.lessonItems('read', TS).length === 3, 'the reading stage is built from the story');
+ok(Sk.charMs('。', 0.7) > Sk.charMs('我', 0.7), 'a full stop pauses longer than a character');
+ok(Sk.charMs('我', 0.5) > Sk.charMs('我', 0.7), 'a slower rate spends longer on each character');
+ok(Sk.charMs('我', 0.7) > 0, 'every character takes real time to read');
 
 /* ------------------------------------------------------------ integrity -- */
 group('content integrity');

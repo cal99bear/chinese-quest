@@ -148,6 +148,10 @@ async function waitFor(fn, timeout = 3000, every = 10) {
 const byEmoji = {};
 win.CQ.words.forEach((w) => { byEmoji[w.em] = w.zh; });
 const summary = (s) => JSON.stringify(s).slice(0, 300);
+function diag() {
+  return win.CQ.store.profiles().map((p) => p.name + ':xp' + p.xp + '/games' + p.stats.games + '/words' + Object.keys(p.words).length).join(' | ') +
+    ' || active=' + win.CQ.store.me().name;
+}
 
 /* Close every card that is on screen or queued (e.g. an evolution
    celebration that appears a moment after returning home), then settle. */
@@ -535,24 +539,30 @@ async function testEvolution() {
 }
 
 /* ------------------------------------------------ 6g. four-skill practice -- */
-async function playSkillItems(maxSteps = 50) {
+async function playSkillItems(maxSteps = 60) {
+  let played = false;
   for (let i = 0; i < maxSteps; i++) {
     if ($('.modal')) return i;
-    if ($('#skillHost [data-act="yes"]') || $('#examHost [data-act="yes"]')) {
-      click($('#skillHost [data-act="yes"]') || $('#examHost [data-act="yes"]'));
-      await wait(40);
+    const root = $('#screen-exam.is-active') ? $('#examHost') : $('#skillHost');
+    if (!root) { await wait(40); continue; }
+    /* stage 1 of the daily lesson: hear the story, then move on */
+    const next = root.querySelector('[data-act="next"]');
+    if (next && root.querySelector('.story')) {
+      const play = root.querySelector('[data-act="play"]');
+      if (play && !played) { played = true; click(play); await wait(400); continue; }
+      click(next);
+      await wait(220);
       continue;
     }
-    if ($('#skillHost [data-act="ok"]') || $('#examHost [data-act="ok"]')) {
-      click($('#skillHost [data-act="ok"]') || $('#examHost [data-act="ok"]'));
-      await wait(40);
-      continue;
-    }
-    const opt = $('#skillHost [data-opt]') || $('#examHost [data-opt]');
-    if (opt) { click(opt); await wait(60); continue; }
-    const chip = $$('#skillHost .bankchip, #examHost .bankchip').filter((c) => !c.classList.contains('used'))[0];
-    if (chip) { click(chip); await wait(40); continue; }
-    await wait(40);
+    const yes = root.querySelector('[data-act="yes"]');
+    if (yes) { click(yes); await wait(50); continue; }
+    const okay = root.querySelector('[data-act="ok"]');
+    if (okay) { click(okay); await wait(50); continue; }
+    const opt = root.querySelector('[data-opt]');
+    if (opt) { click(opt); await wait(70); continue; }
+    const chip = Array.from(root.querySelectorAll('.bankchip')).filter((c) => !c.classList.contains('used'))[0];
+    if (chip) { click(chip); await wait(50); continue; }
+    await wait(50);
   }
   return -1;
 }
@@ -586,30 +596,57 @@ async function testFourSkills() {
   }
 }
 
-/* ------------------------------------------------ 6h. the daily check ----- */
-async function testDailyCheck() {
-  group('daily four-skill check');
+/* -------------------------------- 6h. the daily story lesson ------------- */
+async function testLesson() {
+  group('daily story lesson');
+  const story = win.Skills.todayStory();
+  ok(!!story && !!story.title, 'a story is chosen for today', story && story.title);
+
   click('[data-action="exam"]');
   await waitFor(() => $('#screen-exam.is-active'));
-  ok($('#examHost .hud') !== null, 'the check opens with a progress header');
-  const steps = await playSkillItems(80);
-  ok(steps > 0, 'the check runs through its items');
-  const card = await waitFor(() => $('.modal'), 10000);
-  ok(!!card, 'the check ends with a report card');
-  ok($$('.modal .reportrow').length === 4, 'all four strands are reported',
+  ok($$('#lessonTracker .tracker__step').length === 5, 'five stages are tracked',
+    String($$('#lessonTracker .tracker__step').length));
+  ok($('#examHost .story') !== null, 'the lesson opens with the story to read');
+  ok($('#examHost').textContent.indexOf(story.title) >= 0, 'the story shown is the daily story');
+  ok($$('#examHost .storychar').length >= 30, 'the story renders character by character',
+    String($$('#examHost .storychar').length));
+
+  /* the read-along must highlight what it is reading */
+  click('#examHost [data-act="play"]');
+  const speaking = await waitFor(() => $('#examHost .is-speaking'), 3000);
+  ok(!!speaking, 'the read-along highlights characters as it speaks');
+  const reading = await waitFor(() => $('#examHost .story__line.is-reading'), 3000);
+  ok(!!reading, 'the sentence being read is highlighted too');
+  const ci = speaking ? speaking.getAttribute('data-ci') : '';
+  ok(/^\d+-\d+$/.test(ci || ''), 'the highlight tracks a real character position', ci);
+  await wait(200);
+  const moved = await waitFor(() => {
+    const now = $('#examHost .is-speaking');
+    return now && now.getAttribute('data-ci') !== ci ? now : null;
+  }, 3000);
+  ok(!!moved, 'the highlight moves on to the next character');
+
+  const steps = await playSkillItems(90);
+  ok(steps > 0, 'the lesson runs through its stages');
+  const card = await waitFor(() => $('.modal'), 12000);
+  ok(!!card, 'the lesson ends with a report card');
+  ok($$('.modal .reportrow').length === 5, 'the story plus four strands are reported',
     String($$('.modal .reportrow').length));
-  ok(/總分|Score/.test($('.modal').textContent), 'a total score is shown');
+  ok(/故事/.test($('.modal').textContent), 'the story stage appears on the card');
+  ok(/四技總分|Score/.test($('.modal').textContent), 'a four-skill total is shown');
   const ex = win.CQ.store.examToday();
   ok(!!ex, 'the result is stored for today');
-  ok(ex && ex.byStrand && Object.keys(ex.byStrand).length >= 3, 'per-strand results are kept',
+  ok(ex && ex.story === story.id, 'the story is recorded with the result', ex && ex.story);
+  ok(ex && Object.keys(ex.byStrand || {}).length === 4, 'all four strands are kept',
     ex ? Object.keys(ex.byStrand || {}).join(',') : '-');
+
   click('[data-result="home"]');
   await waitFor(() => $('#screen-home.is-active'));
   await drainModals();
-  ok(/檢查完成了|Done for today/.test($('#screen-home').textContent), 'the home card shows the check is done');
+  ok(/Done for today/.test($('#screen-home').textContent), 'the home card shows the lesson is done');
   click('[data-action="exam"]');
   await waitFor(() => $('.modal'));
-  ok($$('.modal .reportrow').length === 4, 'reopening shows the report again');
+  ok($$('.modal .reportrow').length === 5, 'reopening shows the report again');
   win.App.closeModal();
   await wait(60);
 }
@@ -819,7 +856,7 @@ async function testSettings() {
   click(chip);
   await waitFor(() => $('#screen-home.is-active'));
   ok(win.CQ.store.me().name === 'Tester Two', 'switching players works');
-  ok(win.CQ.store.me().xp > 0, 'the switched-to player still has their xp');
+  ok(win.CQ.store.me().xp > 0, 'the switched-to player still has their xp', diag());
 }
 
 /* ------------------------------------------------------------- 9. reset --- */
@@ -831,7 +868,7 @@ async function testReset() {
   await waitFor(() => $('[data-confirm="reset"]'));
   ok($('[data-confirm="reset"]') !== null, 'reset asks for confirmation first');
   click('[data-result="close"]');
-  ok(win.CQ.store.me().xp > 0, 'cancelling the reset keeps progress');
+  ok(win.CQ.store.me().xp > 0, 'cancelling the reset keeps progress', diag());
   click('[data-action="delplayer"]');
   await waitFor(() => $('[data-confirm="del"]'));
   click('[data-result="close"]');
@@ -859,7 +896,7 @@ async function testReset() {
     await testLevels();
     await testRanking();
     await testFourSkills();
-    await testDailyCheck();
+    await testLesson();
     await testStories();
     await testLevelQuota();
     await testLearnAndCollection();

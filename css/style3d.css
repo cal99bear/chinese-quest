@@ -314,10 +314,58 @@
   .trophy3d { width: 140px; height: 140px; }
 }
 
+/* ======================================== daily story lesson ============= */
+.tracker {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 2px; margin: 0 0 12px;
+  padding: 8px 6px;
+  background: rgba(255, 255, 255, .9);
+  border: 3px solid #fff;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+.tracker__step {
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  flex: 1; min-width: 0;
+  opacity: .45; transition: opacity .2s ease, transform .2s ease;
+}
+.tracker__step--now { opacity: 1; transform: scale(1.06); }
+.tracker__step--done { opacity: 1; }
+.tracker__em { font-size: 20px; font-family: var(--font-emoji); line-height: 1.1; }
+.tracker__zh { font-size: 12px; font-weight: 900; }
+.tracker__link { display: block; width: 12px; height: 3px; border-radius: 2px; background: var(--line); flex: 0 0 12px; }
+
+/* the read-along highlight */
+.story__line { transition: background .25s ease; border-radius: 10px; padding: 2px 4px; }
+.story__line.is-reading { background: #fff6e0; }
+.storychar.is-speaking, .storypunct.is-speaking {
+  color: #fff;
+  background: #ff9f43;
+  border-radius: 8px;
+  box-shadow: 0 2px 0 #d97a1a;
+}
+.storypunct.is-speaking { background: #ffc93c; color: #7a4a00; box-shadow: 0 2px 0 #d9a300; }
+ruby.storychar.is-speaking rt { color: #fff; }
+
+/* the fill-the-blank sentence */
+.cloze {
+  font-family: var(--font-zh);
+  font-size: 27px; font-weight: 700;
+  line-height: 1.7; margin: 8px 0 4px;
+  letter-spacing: 1px;
+}
+.cloze__blank {
+  display: inline-block; min-width: 34px;
+  border-bottom: 4px solid #ff9f43;
+  color: #ff9f43; font-weight: 900;
+}
+.reportrow--story .reportrow__n { color: #15803d; }
+
 @media (prefers-reduced-motion: reduce) {
   .cmnode--current { animation: none; }
   .cmnode__flag, .cmnode__me { animation: none; }
   .podium { transform: none; }
+  .storychar.is-speaking { transition: none; }
 }
 
 
